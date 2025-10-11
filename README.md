@@ -4,12 +4,26 @@ Implementation of baseline models for the **SpeechFake** bilingual audio deepfak
 
 ## Overview
 
-This repository provides:
-- **AASIST**: Audio Anti-Spoofing using Integrated Spectro-Temporal Graph Attention Networks
-- **W2V+AASIST**: Wav2Vec2 XLS-R as frontend + AASIST as backend classifier
+This repository provides **two complete baseline implementations** for SpeechFake paper reproduction:
+
+### 1. AASIST Baseline
+- **Model**: `models/AASIST.py` - Complete heterogeneous stacking graph attention network
+- **Architecture**: Spectro-temporal graph attention with novel attention mechanism
+- **Config**: `config/AASIST.conf` - Paper-aligned parameters
+- **Experiments**: 4 Table 3 configurations (ASV19, BD, BD-EN, BD-CN)
+
+### 2. W2V+AASIST Baseline  
+- **Model**: `models/W2VAASIST.py` - Wav2Vec2 + AASIST integration
+- **Architecture**: Wav2Vec2 XLS-R-300M frontend + AASIST backend classifier
+- **Config**: `config/SpeechFake_W2V_AASIST.conf` - Paper-aligned parameters
+- **Experiments**: 4 Table 3 configurations (ASV19, BD, BD-EN, BD-CN)
+- **Features**: 95% Wav2Vec2 layers frozen, fine-tune last transformer block
+
+### Additional Features
 - Unified data loader for multiple datasets
 - Multi-dataset evaluation scripts
-- Experiment configurations for reproducing paper results
+- Complete Table 3 experiment reproduction
+- Server deployment tools and documentation
 
 ## Supported Datasets
 

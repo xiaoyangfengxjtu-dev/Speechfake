@@ -1,10 +1,10 @@
 # Table 3 Overall Performance Experiments
 
-复现论文 Table 3 的完整实验指南
+复现论文 Table 3 的完整实验指南 - **两个基线模型对比**
 
 ## 实验目标
 
-复现以下性能对比表格：
+复现论文 Table 3 中 **AASIST** 和 **W2V+AASIST** 两个基线模型的性能对比表格：
 
 | Training Dataset | Model | BD | BD-EN | BD-CN | ASV19 | ITW | FOR |
 |------------------|-------|----|----|----|----|----|----|
@@ -19,17 +19,23 @@
 
 ## 实验配置文件
 
-### AASIST 模型
-- `experiments/table3_aasist_asv19.conf` - ASVspoof2019 训练
-- `experiments/table3_aasist_bd.conf` - BD 训练
-- `experiments/table3_aasist_bd_en.conf` - BD-EN 训练
-- `experiments/table3_aasist_bd_cn.conf` - BD-CN 训练
+### 基线模型 1: AASIST
+- **模型实现**: `models/AASIST.py` - 完整的图注意力网络
+- **配置**: `config/AASIST.conf` - 论文对齐参数
+- **实验配置**:
+  - `experiments/table3_aasist_asv19.conf` - ASVspoof2019 训练
+  - `experiments/table3_aasist_bd.conf` - BD 训练
+  - `experiments/table3_aasist_bd_en.conf` - BD-EN 训练
+  - `experiments/table3_aasist_bd_cn.conf` - BD-CN 训练
 
-### W2V+AASIST 模型
-- `experiments/table3_w2v_asv19.conf` - ASVspoof2019 训练
-- `experiments/table3_w2v_bd.conf` - BD 训练
-- `experiments/table3_w2v_bd_en.conf` - BD-EN 训练
-- `experiments/table3_w2v_bd_cn.conf` - BD-CN 训练
+### 基线模型 2: W2V+AASIST
+- **模型实现**: `models/W2VAASIST.py` - Wav2Vec2 + AASIST 集成
+- **配置**: `config/SpeechFake_W2V_AASIST.conf` - 论文对齐参数
+- **实验配置**:
+  - `experiments/table3_w2v_asv19.conf` - ASVspoof2019 训练
+  - `experiments/table3_w2v_bd.conf` - BD 训练
+  - `experiments/table3_w2v_bd_en.conf` - BD-EN 训练
+  - `experiments/table3_w2v_bd_cn.conf` - BD-CN 训练
 
 ## 运行实验
 
