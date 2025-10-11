@@ -42,6 +42,9 @@ def main(args: argparse.Namespace) -> None:
     optim_config = config["optim_config"]
     optim_config["epochs"] = config["num_epochs"]
     track = config["track"]
+    # propagate runtime flags to config for downstream helpers
+    if getattr(args, "dummy_data", False):
+        config["dummy_data"] = True
     assert track in ["LA", "PA", "DF"], "Invalid track given"
     if "eval_all_best" not in config:
         config["eval_all_best"] = "True"
@@ -80,8 +83,10 @@ def main(args: argparse.Namespace) -> None:
     # set device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Device: {}".format(device))
-    if device == "cpu":
-        raise ValueError("GPU not detected!")
+    if device == "cpu" and not getattr(args, "allow_cpu", False):
+        raise ValueError("GPU not detected! Use --allow_cpu for local smoke test.")
+    if device == "cpu" and getattr(args, "allow_cpu", False):
+        warnings.warn("Running in CPU smoke-test mode. Training will be very slow.")
 
     # define model architecture
     model = get_model(model_config, device)
@@ -92,6 +97,8 @@ def main(args: argparse.Namespace) -> None:
 
     # evaluates pretrained model and exit script
     if args.eval:
+        if config.get("dummy_data", False):
+            raise ValueError("--eval is not supported with --dummy_data smoke mode")
         model.load_state_dict(
             torch.load(config["model_path"], map_location=device))
         print("Model loaded : {}".format(config["model_path"]))
@@ -131,82 +138,91 @@ def main(args: argparse.Namespace) -> None:
         print("Start training epoch{:03d}".format(epoch))
         running_loss = train_epoch(trn_loader, model, optimizer, device,
                                    scheduler, config)
-        produce_evaluation_file(dev_loader, model, device,
-                                metric_path/"dev_score.txt", dev_trial_path)
-        dev_eer, dev_tdcf = calculate_tDCF_EER(
-            cm_scores_file=metric_path/"dev_score.txt",
-            asv_score_file=database_path/config["asv_score_path"],
-            output_file=metric_path/"dev_t-DCF_EER_{}epo.txt".format(epoch),
-            printout=False)
-        print("DONE.\nLoss:{:.5f}, dev_eer: {:.3f}, dev_tdcf:{:.5f}".format(
-            running_loss, dev_eer, dev_tdcf))
-        writer.add_scalar("loss", running_loss, epoch)
-        writer.add_scalar("dev_eer", dev_eer, epoch)
-        writer.add_scalar("dev_tdcf", dev_tdcf, epoch)
+        if not config.get("dummy_data", False):
+            produce_evaluation_file(dev_loader, model, device,
+                                    metric_path/"dev_score.txt", dev_trial_path)
+            dev_eer, dev_tdcf = calculate_tDCF_EER(
+                cm_scores_file=metric_path/"dev_score.txt",
+                asv_score_file=database_path/config["asv_score_path"],
+                output_file=metric_path/"dev_t-DCF_EER_{}epo.txt".format(epoch),
+                printout=False)
+            print("DONE.\nLoss:{:.5f}, dev_eer: {:.3f}, dev_tdcf:{:.5f}".format(
+                running_loss, dev_eer, dev_tdcf))
+            writer.add_scalar("loss", running_loss, epoch)
+            writer.add_scalar("dev_eer", dev_eer, epoch)
+            writer.add_scalar("dev_tdcf", dev_tdcf, epoch)
+        else:
+            print("DONE.\nLoss:{:.5f} (dummy mode: skip dev eval)".format(running_loss))
+            writer.add_scalar("loss", running_loss, epoch)
 
-        best_dev_tdcf = min(dev_tdcf, best_dev_tdcf)
-        if best_dev_eer >= dev_eer:
-            print("best model find at epoch", epoch)
-            best_dev_eer = dev_eer
-            torch.save(model.state_dict(),
-                       model_save_path / "epoch_{}_{:03.3f}.pth".format(epoch, dev_eer))
+        if not config.get("dummy_data", False):
+            best_dev_tdcf = min(dev_tdcf, best_dev_tdcf)
+            if best_dev_eer >= dev_eer:
+                print("best model find at epoch", epoch)
+                best_dev_eer = dev_eer
+                torch.save(model.state_dict(),
+                           model_save_path / "epoch_{}_{:03.3f}.pth".format(epoch, dev_eer))
 
-            # do evaluation whenever best model is renewed
-            if str_to_bool(config["eval_all_best"]):
-                produce_evaluation_file(eval_loader, model, device,
-                                        eval_score_path, eval_trial_path)
-                eval_eer, eval_tdcf = calculate_tDCF_EER(
-                    cm_scores_file=eval_score_path,
-                    asv_score_file=database_path / config["asv_score_path"],
-                    output_file=metric_path /
-                    "t-DCF_EER_{:03d}epo.txt".format(epoch))
+                # do evaluation whenever best model is renewed
+                if str_to_bool(config["eval_all_best"]):
+                    produce_evaluation_file(eval_loader, model, device,
+                                            eval_score_path, eval_trial_path)
+                    eval_eer, eval_tdcf = calculate_tDCF_EER(
+                        cm_scores_file=eval_score_path,
+                        asv_score_file=database_path / config["asv_score_path"],
+                        output_file=metric_path /
+                        "t-DCF_EER_{:03d}epo.txt".format(epoch))
 
-                log_text = "epoch{:03d}, ".format(epoch)
-                if eval_eer < best_eval_eer:
-                    log_text += "best eer, {:.4f}%".format(eval_eer)
-                    best_eval_eer = eval_eer
-                if eval_tdcf < best_eval_tdcf:
-                    log_text += "best tdcf, {:.4f}".format(eval_tdcf)
-                    best_eval_tdcf = eval_tdcf
-                    torch.save(model.state_dict(),
-                               model_save_path / "best.pth")
-                if len(log_text) > 0:
-                    print(log_text)
-                    f_log.write(log_text + "\n")
+                    log_text = "epoch{:03d}, ".format(epoch)
+                    if eval_eer < best_eval_eer:
+                        log_text += "best eer, {:.4f}%".format(eval_eer)
+                        best_eval_eer = eval_eer
+                    if eval_tdcf < best_eval_tdcf:
+                        log_text += "best tdcf, {:.4f}".format(eval_tdcf)
+                        best_eval_tdcf = eval_tdcf
+                        torch.save(model.state_dict(),
+                                   model_save_path / "best.pth")
+                    if len(log_text) > 0:
+                        print(log_text)
+                        f_log.write(log_text + "\n")
 
-            print("Saving epoch {} for swa".format(epoch))
-            optimizer_swa.update_swa()
-            n_swa_update += 1
-        writer.add_scalar("best_dev_eer", best_dev_eer, epoch)
-        writer.add_scalar("best_dev_tdcf", best_dev_tdcf, epoch)
+                print("Saving epoch {} for swa".format(epoch))
+                optimizer_swa.update_swa()
+                n_swa_update += 1
+            writer.add_scalar("best_dev_eer", best_dev_eer, epoch)
+            writer.add_scalar("best_dev_tdcf", best_dev_tdcf, epoch)
 
     print("Start final evaluation")
     epoch += 1
     if n_swa_update > 0:
         optimizer_swa.swap_swa_sgd()
         optimizer_swa.bn_update(trn_loader, model, device=device)
-    produce_evaluation_file(eval_loader, model, device, eval_score_path,
-                            eval_trial_path)
-    eval_eer, eval_tdcf = calculate_tDCF_EER(cm_scores_file=eval_score_path,
-                                             asv_score_file=database_path /
-                                             config["asv_score_path"],
-                                             output_file=model_tag / "t-DCF_EER.txt")
-    f_log = open(model_tag / "metric_log.txt", "a")
-    f_log.write("=" * 5 + "\n")
-    f_log.write("EER: {:.3f}, min t-DCF: {:.5f}".format(eval_eer, eval_tdcf))
-    f_log.close()
+    if not config.get("dummy_data", False):
+        produce_evaluation_file(eval_loader, model, device, eval_score_path,
+                                eval_trial_path)
+        eval_eer, eval_tdcf = calculate_tDCF_EER(cm_scores_file=eval_score_path,
+                                                 asv_score_file=database_path /
+                                                 config["asv_score_path"],
+                                                 output_file=model_tag / "t-DCF_EER.txt")
+        f_log = open(model_tag / "metric_log.txt", "a")
+        f_log.write("=" * 5 + "\n")
+        f_log.write("EER: {:.3f}, min t-DCF: {:.5f}".format(eval_eer, eval_tdcf))
+        f_log.close()
 
-    torch.save(model.state_dict(),
-               model_save_path / "swa.pth")
-
-    if eval_eer <= best_eval_eer:
-        best_eval_eer = eval_eer
-    if eval_tdcf <= best_eval_tdcf:
-        best_eval_tdcf = eval_tdcf
         torch.save(model.state_dict(),
-                   model_save_path / "best.pth")
-    print("Exp FIN. EER: {:.3f}, min t-DCF: {:.5f}".format(
-        best_eval_eer, best_eval_tdcf))
+                   model_save_path / "swa.pth")
+
+        if eval_eer <= best_eval_eer:
+            best_eval_eer = eval_eer
+        if eval_tdcf <= best_eval_tdcf:
+            best_eval_tdcf = eval_tdcf
+            torch.save(model.state_dict(),
+                       model_save_path / "best.pth")
+        print("Exp FIN. EER: {:.3f}, min t-DCF: {:.5f}".format(
+            best_eval_eer, best_eval_tdcf))
+    else:
+        torch.save(model.state_dict(), model_save_path / "swa.pth")
+        print("Exp FIN (dummy mode).")
 
 
 def get_model(model_config: Dict, device: torch.device):
@@ -243,6 +259,44 @@ def get_loader(
         "ASVspoof2019_{}_cm_protocols/{}.cm.eval.trl.txt".format(
             track, prefix_2019))
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    use_pinned = (device == "cuda")
+
+    # Dummy small dataset for local smoke test
+    if config.get("dummy_data", False):
+        nb_samp = config["model_config"].get("nb_samp", 64600)
+        def _make_tensor_dataset(n_samples, with_label=True):
+            xs = torch.randn(n_samples, nb_samp)
+            if with_label:
+                ys = torch.randint(low=0, high=2, size=(n_samples,))
+                return torch.utils.data.TensorDataset(xs, ys)
+            else:
+                # keys for eval/dev (strings)
+                keys = [f"utt_{i:04d}" for i in range(n_samples)]
+                class _EvalSet(torch.utils.data.Dataset):
+                    def __len__(self_inner):
+                        return n_samples
+                    def __getitem__(self_inner, idx):
+                        return xs[idx], keys[idx]
+                return _EvalSet()
+
+        trn_loader = DataLoader(_make_tensor_dataset(32, with_label=True),
+                                batch_size=min(config["batch_size"], 8),
+                                shuffle=True,
+                                drop_last=True,
+                                pin_memory=use_pinned)
+        dev_loader = DataLoader(_make_tensor_dataset(16, with_label=False),
+                                batch_size=min(config["batch_size"], 8),
+                                shuffle=False,
+                                drop_last=False,
+                                pin_memory=use_pinned)
+        eval_loader = DataLoader(_make_tensor_dataset(16, with_label=False),
+                                 batch_size=min(config["batch_size"], 8),
+                                 shuffle=False,
+                                 drop_last=False,
+                                 pin_memory=use_pinned)
+        return trn_loader, dev_loader, eval_loader
+
     d_label_trn, file_train = genSpoof_list(dir_meta=trn_list_path,
                                             is_train=True,
                                             is_eval=False)
@@ -257,7 +311,7 @@ def get_loader(
                             batch_size=config["batch_size"],
                             shuffle=True,
                             drop_last=True,
-                            pin_memory=True,
+                            pin_memory=use_pinned,
                             worker_init_fn=seed_worker,
                             generator=gen)
 
@@ -272,7 +326,7 @@ def get_loader(
                             batch_size=config["batch_size"],
                             shuffle=False,
                             drop_last=False,
-                            pin_memory=True)
+                            pin_memory=use_pinned)
 
     file_eval = genSpoof_list(dir_meta=eval_trial_path,
                               is_train=False,
@@ -283,7 +337,7 @@ def get_loader(
                              batch_size=config["batch_size"],
                              shuffle=False,
                              drop_last=False,
-                             pin_memory=True)
+                             pin_memory=use_pinned)
 
     return trn_loader, dev_loader, eval_loader
 
@@ -384,8 +438,18 @@ if __name__ == "__main__":
                         type=str,
                         default=None,
                         help="comment to describe the saved model")
+    parser.add_argument(
+        "--allow_cpu",
+        action="store_true",
+        help="allow CPU-only smoke test when no GPU is available",
+    )
     parser.add_argument("--eval_model_weights",
                         type=str,
                         default=None,
                         help="directory to the model weight file (can be also given in the config file)")
+    parser.add_argument(
+        "--dummy_data",
+        action="store_true",
+        help="use a tiny randomly generated dataset for local smoke tests",
+    )
     main(parser.parse_args())

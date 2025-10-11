@@ -1,158 +1,138 @@
-# AASIST
+# SpeechFake Baseline Implementation
 
-This repository provides the overall framework for training and evaluating audio anti-spoofing systems proposed in ['AASIST: Audio Anti-Spoofing using Integrated Spectro-Temporal Graph Attention Networks'](https://arxiv.org/abs/2110.01200)
+Implementation of baseline models for the **SpeechFake** bilingual audio deepfake detection dataset, including AASIST and W2V+AASIST architectures.
 
-### Getting started
-`requirements.txt` must be installed for execution. We state our experiment environment for those who prefer to simulate as similar as possible. 
-- Installing dependencies
-```
+## Overview
+
+This repository provides:
+- **AASIST**: Audio Anti-Spoofing using Integrated Spectro-Temporal Graph Attention Networks
+- **W2V+AASIST**: Wav2Vec2 XLS-R as frontend + AASIST as backend classifier
+- Unified data loader for multiple datasets
+- Multi-dataset evaluation scripts
+- Experiment configurations for reproducing paper results
+
+## Supported Datasets
+
+- **SpeechFake Bilingual Dataset (BD)** - Primary dataset ([ModelScope](https://www.modelscope.cn/datasets/inclusionAI/SPEECHFAKE))
+- **ASVspoof2019 LA** - Benchmark comparison
+- **In-the-Wild (ITW)** - Cross-dataset evaluation
+- **FakeOrReal (FOR)** - Cross-dataset evaluation
+
+## Quick Start
+
+### Installation
+
+```bash
+git clone https://github.com/yourusername/speechfake-baselines.git
+cd speechfake-baselines
 pip install -r requirements.txt
 ```
-- Our environment (for GPU training)
-  - Based on a docker image: `pytorch:1.6.0-cuda10.1-cudnn7-runtime`
-  - GPU: 1 NVIDIA Tesla V100
-    - About 16GB is required to train AASIST using a batch size of 24
-  - gpu-driver: 418.67
 
-### Data preparation
-We train/validate/evaluate AASIST using the ASVspoof 2019 logical access dataset [4].
-```
-python ./download_dataset.py
-```
-(Alternative) Manual preparation is available via 
-- ASVspoof2019 dataset: https://datashare.ed.ac.uk/handle/10283/3336
-  1. Download `LA.zip` and unzip it
-  2. Set your dataset directory in the configuration file
+### Data Preparation
 
-### Training 
-The `main.py` includes train/validation/evaluation.
+```bash
+# Analyze dataset structure
+python prepare_speechfake_data.py --data_dir /path/to/SPEECHFAKE/ --analyze
 
-To train AASIST [1]:
-```
-python main.py --config ./config/AASIST.conf
-```
-To train AASIST-L [1]:
-```
-python main.py --config ./config/AASIST-L.conf
+# Create CSV files
+python prepare_speechfake_data.py \
+    --data_dir /path/to/SPEECHFAKE/train/ \
+    --output_csv train.csv \
+    --audio_dir audio
 ```
 
-#### Training baselines
+### Training
 
-We additionally enabled the training of RawNet2[2] and RawGAT-ST[3]. 
+```bash
+# Train W2V+AASIST with exact paper parameters (Table 9)
+python main.py --config experiments/paper_reproduction.conf
 
-To Train RawNet2 [2]:
-```
-python main.py --config ./config/RawNet2_baseline.conf
-```
+# Train AASIST with exact paper parameters (Table 9)
+python main.py --config config/AASIST.conf
 
-To train RawGAT-ST [3]:
-```
-python main.py --config ./config/RawGATST_baseline.conf
-```
-
-### Pre-trained models
-We provide pre-trained AASIST and AASIST-L.
-
-To evaluate AASIST [1]:
-- It shows `EER: 0.83%`, `min t-DCF: 0.0275`
-```
-python main.py --eval --config ./config/AASIST.conf
-```
-To evaluate AASIST-L [1]:
-- It shows `EER: 0.99%`, `min t-DCF: 0.0309`
-- Model has `85,306` parameters
-```
-python main.py --eval --config ./config/AASIST-L.conf
+# Train W2V+AASIST on full Bilingual Dataset (example)
+python main.py --config experiments/exp_bd_w2v_aasist.conf
 ```
 
+**Paper Parameters (Table 9):**
+- **W2V+AASIST**: Batch=512, LR=1e-6, Epochs=50, Weight Decay=1e-4
+- **AASIST**: Batch=1024, LR=1e-4, Epochs=50, Weight Decay=1e-4
+- **Loss**: Weighted CE (0.9 real, 0.1 fake)
+- **Data Split**: 6:1:3 (train:dev:test) for SpeechFake BD
+- **Audio**: 4s@16kHz, zero-pad + random/center crop
+- **Wav2Vec2**: XLS-R-300M, freeze 95% layers, fine-tune last layers
 
-### Developing custom models
-Simply by adding a configuration file and a model architecture, one can train and evaluate their models.
+### Evaluation
 
-To train a custom model:
-```
-1. Define your model
-  - The model should be a class named "Model"
-2. Make a configuration by modifying "model_config"
-  - architecture: filename of your model.
-  - hyper-parameters to be tuned can be also passed using variables in "model_config"
-3. run python main.py --config {CUSTOM_CONFIG_NAME}
-```
-
-### License
-```
-Copyright (c) 2021-present NAVER Corp.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+```bash
+python speechfake_evaluation.py \
+    --model_path exp_result/model/weights/best.pth \
+    --config experiments/exp_bd_w2v_aasist.conf \
+    --data_root /path/to/datasets/ \
+    --test_sets BD_test BD_EN_test BD_CN_test ASV19_eval \
+    --output results.json
 ```
 
-### Acknowledgements
-This repository is built on top of several open source projects. 
-- [ASVspoof 2021 baseline repo](https://github.com/asvspoof-challenge/2021/tree/main/LA/Baseline-RawNet2)
-- [min t-DCF implementation](https://www.asvspoof.org/resources/tDCF_python_v2.zip)
+## Project Structure
 
-The repository for baseline RawGAT-ST model will be open
--  https://github.com/eurecom-asp/RawGAT-ST-antispoofing
+```
+speechfake-baselines/
+├── models/                      # Model implementations
+│   ├── AASIST.py               # AASIST model
+│   ├── W2VAASIST.py            # W2V+AASIST model
+│   └── ...
+├── config/                      # Model configurations
+├── experiments/                 # Experiment configs
+├── main.py                      # Training script
+├── speechfake_dataloader.py     # Data loader
+├── speechfake_evaluation.py     # Evaluation script
+├── prepare_speechfake_data.py   # Data preprocessing
+└── requirements.txt             # Dependencies
+```
 
-The dataset we use is ASVspoof 2019 [4]
-- https://www.asvspoof.org/index2019.html
+## 🔬 Model Architectures
 
-### References
-[1] AASIST: Audio Anti-Spoofing using Integrated Spectro-Temporal Graph Attention Networks
+### AASIST
+- Heterogeneous stacking graph attention network
+- Captures spoofing artifacts in temporal and spectral domains
+- ~500K trainable parameters
+
+### W2V+AASIST
+- **Frontend**: Wav2Vec2 XLS-R-300M (frozen)
+- **Backend**: AASIST graph attention network
+- ~300.5M total parameters (~500K trainable)
+
+## 💻 Hardware Requirements
+
+- **GPU**: NVIDIA A800 or equivalent (24GB+ VRAM recommended)
+- **RAM**: 32GB+
+- **Storage**: 500GB+ for datasets
+
+## 📖 Citation
+
 ```bibtex
-@INPROCEEDINGS{Jung2021AASIST,
+@article{speechfake2024,
+  title={SpeechFake: A Large-Scale Bilingual Audio Deepfake Detection Dataset},
+  author={...},
+  journal={ICLR},
+  year={2025}
+}
+
+@inproceedings{jung2022aasist,
+  title={AASIST: Audio Anti-Spoofing using Integrated Spectro-Temporal Graph Attention Networks},
   author={Jung, Jee-weon and Heo, Hee-Soo and Tak, Hemlata and Shim, Hye-jin and Chung, Joon Son and Lee, Bong-Jin and Yu, Ha-Jin and Evans, Nicholas},
-  booktitle={arXiv preprint arXiv:2110.01200}, 
-  title={AASIST: Audio Anti-Spoofing using Integrated Spectro-Temporal Graph Attention Networks}, 
-  year={2021}
-```
-
-[2] End-to-End anti-spoofing with RawNet2
-```bibtex
-@INPROCEEDINGS{Tak2021End,
-  author={Tak, Hemlata and Patino, Jose and Todisco, Massimiliano and Nautsch, Andreas and Evans, Nicholas and Larcher, Anthony},
-  booktitle={Proc. ICASSP}, 
-  title={End-to-End anti-spoofing with RawNet2}, 
-  year={2021},
-  pages={6369-6373}
+  booktitle={ICASSP},
+  year={2022}
 }
 ```
 
-[3] End-to-end spectro-temporal graph attention networks for speaker verification anti-spoofing and speech deepfake detection
-```bibtex
-@inproceedings{tak21_asvspoof,
-  author={Tak, Hemlata and Jung, Jee-weon and Patino, Jose and Kamble, Madhu and Todisco, Massimiliano and Evans, Nicholas},
-  booktitle={Proc. ASVSpoof Challenge},
-  title={End-to-end spectro-temporal graph attention networks for speaker verification anti-spoofing and speech deepfake detection},
-  year={2021},
-  pages={1--8}
-```
+## 📄 License
 
-[4] ASVspoof 2019: A large-scale public database of synthesized, converted and replayed speech
-```bibtex
-@article{wang2020asvspoof,
-  title={ASVspoof 2019: A large-scale public database of synthesized, converted and replayed speech},
-  author={Wang, Xin and Yamagishi, Junichi and Todisco, Massimiliano and Delgado, H{\'e}ctor and Nautsch, Andreas and Evans, Nicholas and Sahidullah, Md and Vestman, Ville and Kinnunen, Tomi and Lee, Kong Aik and others},
-  journal={Computer Speech \& Language},
-  volume={64},
-  pages={101114},
-  year={2020},
-  publisher={Elsevier}
-}
-```
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgements
+
+Built upon:
+- [AASIST Official Implementation](https://github.com/clovaai/aasist)
+- [ASVspoof 2021 Baseline](https://github.com/asvspoof-challenge/2021)
+- Hugging Face Transformers

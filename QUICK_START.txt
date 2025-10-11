@@ -1,0 +1,28 @@
+# 快速上传到 GitHub
+
+1. 初始化 Git
+   cd /Users/fengxiaoyang/assist
+   git init
+   git add .
+   git commit -m "Initial commit: SpeechFake baselines"
+
+2. 创建 GitHub 仓库
+   访问: https://github.com/new
+   仓库名: speechfake-baselines
+   不要初始化 README
+
+3. 上传
+   git remote add origin https://github.com/YOUR_USERNAME/speechfake-baselines.git
+   git branch -M main
+   git push -u origin main
+
+4. 服务器使用
+   git clone https://github.com/YOUR_USERNAME/speechfake-baselines.git
+   cd speechfake-baselines
+   pip install -r requirements.txt
+   
+   # 数据准备
+   python prepare_speechfake_data.py --data_dir /path/to/data --analyze
+   
+   # 开始训练
+   python main.py --config experiments/exp_bd_w2v_aasist.conf

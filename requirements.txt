@@ -1,4 +1,21 @@
-torch>=1.6.0
-torchcontrib
-numpy
-soundfile
+# Core Dependencies
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.21.0
+
+# Audio Processing
+soundfile>=0.12.0
+
+# Model Components
+transformers>=4.40.0
+torchcontrib>=0.0.2
+
+# Training & Logging
+tensorboard>=2.10.0
+
+# Data Processing
+pandas>=1.3.0
+
+# Evaluation
+scikit-learn>=1.0.0
+scipy>=1.7.0
