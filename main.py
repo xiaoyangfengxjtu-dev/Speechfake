@@ -24,6 +24,7 @@ from torchcontrib.optim import SWA
 
 from data_utils import (Dataset_ASVspoof2019_train,
                         Dataset_ASVspoof2019_devNeval, genSpoof_list)
+from speechfake_dataloader import get_dataloader as sf_get_dataloader
 from evaluation import calculate_tDCF_EER
 from utils import create_optimizer, seed_worker, set_seed, str_to_bool
 
@@ -91,9 +92,10 @@ def main(args: argparse.Namespace) -> None:
     # define model architecture
     model = get_model(model_config, device)
     
-    # Multi-GPU support
+    # Multi-GPU support with DDP (distributes memory across GPUs)
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
+        print(f"Using {torch.cuda.device_count()} GPUs for training")
 
     # define dataloaders
     trn_loader, dev_loader, eval_loader = get_loader(
@@ -246,6 +248,48 @@ def get_loader(
         config: dict) -> List[torch.utils.data.DataLoader]:
     """Make PyTorch DataLoaders for train / developement / evaluation"""
     track = config["track"]
+
+    # SpeechFake BD branch: use CSV-based loader
+    if track == "BD":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        use_pinned = (device == "cuda")
+
+        train_csv = config.get("train_csv")
+        dev_csv = config.get("dev_csv")
+        test_csv = config.get("test_csv", dev_csv)
+        audio_dir = config.get("train_audio_dir", str(database_path))
+
+        assert train_csv and dev_csv and audio_dir, "BD track requires train_csv, dev_csv, train_audio_dir"
+
+        trn_loader = sf_get_dataloader(
+            csv_file=train_csv,
+            audio_dir=audio_dir,
+            batch_size=config["batch_size"],
+            num_workers=4,
+            shuffle=True,
+            is_eval=False,
+        )
+
+        dev_loader = sf_get_dataloader(
+            csv_file=dev_csv,
+            audio_dir=audio_dir,
+            batch_size=config["batch_size"],
+            num_workers=4,
+            shuffle=False,
+            is_eval=False,
+        )
+
+        # For BD we don't use ASV-style evaluation; return a placeholder loader (same as dev)
+        eval_loader = sf_get_dataloader(
+            csv_file=test_csv,
+            audio_dir=audio_dir,
+            batch_size=config["batch_size"],
+            num_workers=4,
+            shuffle=False,
+            is_eval=False,
+        )
+
+        return trn_loader, dev_loader, eval_loader
     prefix_2019 = "ASVspoof2019.{}".format(track)
 
     trn_database_path = database_path / "ASVspoof2019_{}_train/".format(track)
