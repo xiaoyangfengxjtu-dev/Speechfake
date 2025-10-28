@@ -46,7 +46,7 @@ def main(args: argparse.Namespace) -> None:
     # propagate runtime flags to config for downstream helpers
     if getattr(args, "dummy_data", False):
         config["dummy_data"] = True
-    assert track in ["LA", "PA", "DF"], "Invalid track given"
+    assert track in ["LA", "PA", "DF", "BD"], "Invalid track given"
     if "eval_all_best" not in config:
         config["eval_all_best"] = "True"
     if "freq_aug" not in config:
