@@ -90,6 +90,10 @@ def main(args: argparse.Namespace) -> None:
 
     # define model architecture
     model = get_model(model_config, device)
+    
+    # Multi-GPU support
+    if torch.cuda.device_count() > 1:
+        model = torch.nn.DataParallel(model)
 
     # define dataloaders
     trn_loader, dev_loader, eval_loader = get_loader(
