@@ -11,6 +11,24 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 import numpy as np
+from scipy.io.wavfile import read as scipy_wavread
+
+
+def _load_wav_via_scipy(path):
+    """Load WAV file using scipy (more robust for various formats)"""
+    sr, data = scipy_wavread(path)
+    # Convert to float32
+    if data.dtype in [np.int16, np.int32]:
+        data = data.astype(np.float32) / float(np.iinfo(data.dtype).max)
+    elif data.dtype == np.float32:
+        pass
+    else:
+        data = data.astype(np.float32)
+    # Convert stereo to mono
+    if data.ndim == 2:
+        data = data.mean(axis=1)
+    # Return torch tensor and sample rate
+    return torch.from_numpy(data), int(sr)
 
 
 class SpeechFakeDataset(Dataset):
@@ -82,19 +100,14 @@ class SpeechFakeDataset(Dataset):
         label = self.label_map.get(label_str, 0)
         
         # Load audio
-        waveform, sr = torchaudio.load(str(file_path))
+        waveform, sr = _load_wav_via_scipy(str(file_path))
         
         # Resample if needed
         if sr != self.sample_rate:
             resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
             waveform = resampler(waveform)
         
-        # Convert to mono
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
-        
-        # Squeeze to 1D
-        waveform = waveform.squeeze(0)
+        # waveform is already 1D from scipy loader, no need to convert to mono or squeeze
         
         # Pad or truncate to fixed length (as per paper: "Chunk or pad to 4s")
         current_length = waveform.shape[0]
@@ -160,16 +173,13 @@ class SpeechFakeEvalDataset(Dataset):
         file_id = Path(row['file']).stem  # File name without extension
         
         # Load and process audio (same as training)
-        waveform, sr = torchaudio.load(str(file_path))
+        waveform, sr = _load_wav_via_scipy(str(file_path))
         
         if sr != self.sample_rate:
             resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
             waveform = resampler(waveform)
         
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
-        
-        waveform = waveform.squeeze(0)
+        # waveform is already 1D from scipy loader
         
         # Center crop/pad for evaluation
         current_length = waveform.shape[0]
